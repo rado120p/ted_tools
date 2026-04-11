@@ -1,0 +1,9 @@
+lxml
+jxmlease
+networkx
+junos-eznc
+
+[dev]
+pytest
+ruff
+mypy
