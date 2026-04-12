@@ -15,14 +15,17 @@ Security note:
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from lxml import etree
 from jnpr.junos import Device
+
+log = logging.getLogger(__name__)
 
 from ted_tools.config import XML_DIR
 from ted_tools.exception_handler import ExceptionHandler
@@ -99,6 +102,9 @@ class NodeVerifyResult:
     status: str          # "matches_db1" | "matches_db2" | "matches_neither" | "unreachable" | "error"
     detail: str = ""     # human-readable summary shown in the UI
     error: Optional[str] = None
+    config_map: Optional[dict] = None   # {local_ip: {"IGP Metric": ..., "TE Metric": ...}}
+    db1_records: Optional[list] = None  # raw records from snapshot A for this node
+    db2_records: Optional[list] = None  # raw records from snapshot B for this node
 
 
 def _safe_int(value) -> Optional[int]:
@@ -117,66 +123,60 @@ def _fetch_isis_config_metrics(dev) -> dict:
     Returns {interface_name: {"igp": int_or_None, "te": int_or_None}}.
 
     Tries level-2 metric first, falls back to flat <metric> element.
-    TE metric is taken from <te-metric> or traffic-engineering/metric.
+    TE metric is taken from level/<te-metric> or level/traffic-engineering/metric.
     """
-    from lxml import etree
-
     filter_xml = etree.fromstring(
         "<configuration>"
         "  <protocols><isis><interface/></isis></protocols>"
         "</configuration>"
     )
     isis_cfg = dev.rpc.get_config(filter_xml=filter_xml)
+    log.debug("IS-IS config XML:\n%s", etree.tostring(isis_cfg, pretty_print=True).decode())
 
     metrics: dict = {}
-    for iface in isis_cfg.findall(".//{http://xml.juniper.net/xnm/1.1/xnm}interface") or \
-                  isis_cfg.findall(".//interface"):
-        name_el = iface.find("name") or iface.find(
-            "{http://xml.juniper.net/xnm/1.1/xnm}name"
-        )
+    for iface in isis_cfg.findall(".//interface"):
+        name_el = iface.find("name")
         if name_el is None:
             continue
         name = name_el.text.strip()
 
-        # IGP metric — prefer level-2 explicit config, fall back to flat <metric>
+        # Skip passive interfaces — they don't appear as TED transit links
+        if iface.find("passive") is not None:
+            log.debug("IS-IS interface %s is passive — skipped", name)
+            continue
+
         igp: Optional[int] = None
-        for level in iface.findall("level") or iface.findall(
-            "{http://xml.juniper.net/xnm/1.1/xnm}level"
-        ):
-            lvl_name = level.find("name") or level.find(
-                "{http://xml.juniper.net/xnm/1.1/xnm}name"
-            )
+        te: Optional[int] = None
+
+        # Prefer level-2 config; fall back to flat <metric>/<te-metric>
+        for level in iface.findall("level"):
+            lvl_name = level.find("name")
             if lvl_name is not None and lvl_name.text.strip() == "2":
-                m = level.find("metric") or level.find(
-                    "{http://xml.juniper.net/xnm/1.1/xnm}metric"
-                )
+                m = level.find("metric")
                 if m is not None:
                     igp = _safe_int(m.text)
+                te_el = level.find("te-metric")
+                if te_el is not None:
+                    te = _safe_int(te_el.text)
+                else:
+                    te_m = level.find("traffic-engineering/metric")
+                    if te_m is not None:
+                        te = _safe_int(te_m.text)
                 break
+
         if igp is None:
-            m = iface.find("metric") or iface.find(
-                "{http://xml.juniper.net/xnm/1.1/xnm}metric"
-            )
+            m = iface.find("metric")
             if m is not None:
                 igp = _safe_int(m.text)
-
-        # TE metric — <te-metric> or traffic-engineering/metric
-        te: Optional[int] = None
-        te_el = iface.find("te-metric") or iface.find(
-            "{http://xml.juniper.net/xnm/1.1/xnm}te-metric"
-        )
-        if te_el is not None:
-            te = _safe_int(te_el.text)
-        else:
-            te_m = iface.find(".//traffic-engineering/metric") or iface.find(
-                ".//{http://xml.juniper.net/xnm/1.1/xnm}traffic-engineering"
-                "/{http://xml.juniper.net/xnm/1.1/xnm}metric"
-            )
-            if te_m is not None:
-                te = _safe_int(te_m.text)
+        if te is None:
+            te_el = iface.find("te-metric")
+            if te_el is not None:
+                te = _safe_int(te_el.text)
 
         metrics[name] = {"igp": igp, "te": te}
+        log.debug("IS-IS interface parsed: %s → igp=%s te=%s", name, igp, te)
 
+    log.debug("IS-IS metrics total: %d interface(s)", len(metrics))
     return metrics
 
 
@@ -185,45 +185,37 @@ def _fetch_interface_ips(dev) -> dict:
     Fetch interface IP addresses from configuration.
     Returns {full_interface_name: [ip, ...]}  e.g. {"ge-0/0/0.0": ["10.0.0.1"]}.
     """
-    from lxml import etree
-
     filter_xml = etree.fromstring(
         "<configuration><interfaces/></configuration>"
     )
     iface_cfg = dev.rpc.get_config(filter_xml=filter_xml)
+    log.debug("Interface config XML:\n%s", etree.tostring(iface_cfg, pretty_print=True).decode())
 
-    ns = "{http://xml.juniper.net/xnm/1.1/xnm}"
     ip_map: dict = {}
 
-    def _find(el, tag):
-        return el.find(tag) or el.find(ns + tag)
-
-    def _findall(el, tag):
-        return el.findall(tag) or el.findall(ns + tag)
-
-    for iface in _findall(iface_cfg, ".//interface"):
-        iface_name_el = _find(iface, "name")
+    for iface in iface_cfg.findall(".//interface"):
+        iface_name_el = iface.find("name")
         if iface_name_el is None:
             continue
         iface_name = iface_name_el.text.strip()
 
-        for unit in _findall(iface, "unit"):
-            unit_name_el = _find(unit, "name")
+        for unit in iface.findall("unit"):
+            unit_name_el = unit.find("name")
             unit_name = unit_name_el.text.strip() if unit_name_el is not None else "0"
             full_name = f"{iface_name}.{unit_name}"
 
             ips = []
-            for addr_el in unit.findall(".//address") + unit.findall(
-                f".//{ns}address"
-            ):
-                addr_name = _find(addr_el, "name")
+            for addr_el in unit.findall("family/inet/address"):
+                addr_name = addr_el.find("name")
                 if addr_name is not None:
                     ip = addr_name.text.strip().split("/")[0]
                     ips.append(ip)
 
             if ips:
                 ip_map[full_name] = ips
+                log.debug("Interface IPs: %s → %s", full_name, ips)
 
+    log.debug("Interface IP map total: %d interface(s) with addresses", len(ip_map))
     return ip_map
 
 
@@ -234,11 +226,17 @@ def _build_config_metric_map(isis_metrics: dict, iface_ips: dict) -> dict:
     """
     result: dict = {}
     for iface_name, metrics in isis_metrics.items():
-        for ip in iface_ips.get(iface_name, []):
+        ips = iface_ips.get(iface_name, [])
+        if not ips:
+            log.debug("No IP found for IS-IS interface %s — skipped", iface_name)
+        for ip in ips:
             result[ip] = {
                 "IGP Metric": metrics["igp"],
                 "TE Metric": metrics["te"],
             }
+            log.debug("Config metric map: %s → IGP=%s TE=%s", ip, metrics["igp"], metrics["te"])
+
+    log.debug("Config metric map total: %d IP(s)", len(result))
     return result
 
 
@@ -261,11 +259,19 @@ def _config_matches_db(config_map: dict, db_records: list) -> bool:
         if r.get("Local IP")
     }
 
-    if set(config_map.keys()) != set(db_map.keys()):
+    cfg_ips = set(config_map.keys())
+    db_ips  = set(db_map.keys())
+    if cfg_ips != db_ips:
+        log.debug(
+            "IP set mismatch — config only: %s  db only: %s",
+            cfg_ips - db_ips, db_ips - cfg_ips,
+        )
         return False
 
     for ip, cfg_metrics in config_map.items():
-        if cfg_metrics != db_map.get(ip):
+        db_metrics = db_map.get(ip)
+        if cfg_metrics != db_metrics:
+            log.debug("Metric mismatch for %s — config: %s  db: %s", ip, cfg_metrics, db_metrics)
             return False
 
     return True
@@ -290,6 +296,7 @@ def _verify_one_node(
     administrator manually reconfigures them, so transient link failures do not
     affect the result.
     """
+    log.debug("verify_one_node: node=%s host=%s", node, host)
     try:
         with Device(
             host=host,
@@ -302,6 +309,7 @@ def _verify_one_node(
             isis_metrics = _fetch_isis_config_metrics(dev)
             iface_ips    = _fetch_interface_ips(dev)
     except Exception as exc:
+        log.debug("verify_one_node: unreachable — %s", exc)
         return NodeVerifyResult(
             node=node, host=host, status="unreachable",
             detail="Could not reach device — manual verification required.",
@@ -311,12 +319,19 @@ def _verify_one_node(
     try:
         config_map = _build_config_metric_map(isis_metrics, iface_ips)
     except Exception as exc:
+        log.debug("verify_one_node: config parse error — %s", exc)
         return NodeVerifyResult(
             node=node, host=host, status="error",
             detail="Connected but config parsing failed.",
             error=str(exc),
         )
 
+    log.debug(
+        "verify_one_node: config_map=%s  db1_ips=%s  db2_ips=%s",
+        list(config_map.keys()),
+        [r.get("Local IP") for r in db1_records],
+        [r.get("Local IP") for r in db2_records],
+    )
     n_cfg = len(config_map)
     if _config_matches_db(config_map, db1_records):
         return NodeVerifyResult(
@@ -325,6 +340,9 @@ def _verify_one_node(
                 f"{n_cfg} IS-IS interface(s) configured — "
                 "metrics match snapshot A (change appears transient)."
             ),
+            config_map=config_map,
+            db1_records=db1_records,
+            db2_records=db2_records,
         )
     if _config_matches_db(config_map, db2_records):
         return NodeVerifyResult(
@@ -333,6 +351,9 @@ def _verify_one_node(
                 f"{n_cfg} IS-IS interface(s) configured — "
                 "metrics match snapshot B (change confirmed in configuration)."
             ),
+            config_map=config_map,
+            db1_records=db1_records,
+            db2_records=db2_records,
         )
     return NodeVerifyResult(
         node=node, host=host, status="matches_neither",
@@ -340,6 +361,9 @@ def _verify_one_node(
             f"{n_cfg} IS-IS interface(s) configured — "
             "metrics match neither snapshot (device is in a third state)."
         ),
+        config_map=config_map,
+        db1_records=db1_records,
+        db2_records=db2_records,
     )
 
 

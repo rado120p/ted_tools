@@ -154,8 +154,8 @@ def build_graph_from_adjacency(
             te_metric  = _to_int(neighbor_record.get("TE Metric"),  1.0)
 
             edge_attributes = {
-                "local_ip":   neighbor_record.get("Local IP"),
-                "remote_ip":  neighbor_record.get("Remote IP"),
+                "Local IP":   neighbor_record.get("Local IP"),
+                "Remote IP":  neighbor_record.get("Remote IP"),
                 "IGP Metric": igp_metric,
                 "TE Metric":  te_metric,
                 "local_ifl":  neighbor_record.get("Local Interface"),
@@ -271,6 +271,9 @@ ANALYSIS_TYPES: Dict[str, str] = {
     "first_node_failure": "First next-hop node failure",
 }
 
+EXCLUDED_NODE_COLOR = "#b0b8c1"   # grey — excluded nodes
+EXCLUDED_EDGE_COLOR = "#c8cdd2"   # lighter grey — excluded edges
+
 ANALYSIS_COLORS: Dict[str, str] = {
     "primary":            "#2563eb",  # blue
     "link_disjoint":      "#1AFF1A",  # green
@@ -361,12 +364,29 @@ def build_path_overlay_graph(
     path: List[str],
     *,
     path_color: str,
+    exclude_nodes: Optional[List[str]] = None,
+    exclude_links: Optional[List[tuple]] = None,
 ) -> nx.Graph:
     """
     Copy the full topology and highlight the given path in path_color.
     Source = SOURCE_COLOR, destination = DEST_COLOR, transit nodes and edges = path_color.
+    Excluded nodes/links are dimmed grey rather than removed, so the full
+    topology context remains visible.
     """
     graph = base_graph.copy()
+
+    # Dim excluded nodes first (path colouring below takes priority on path nodes)
+    for node in (exclude_nodes or []):
+        if node in graph:
+            graph.nodes[node]["color"] = EXCLUDED_NODE_COLOR
+
+    # Dim excluded links (both directions)
+    for a, b in (exclude_links or []):
+        for u, v in ((a, b), (b, a)):
+            if graph.has_edge(u, v):
+                for edge_data in graph[u][v].values():
+                    edge_data["color"] = EXCLUDED_EDGE_COLOR
+                    edge_data["width"] = 1
 
     if not path:
         return graph
@@ -419,7 +439,7 @@ def path_hop_details(
                 "neighbor":     v,
                 "te_metric":    _to_int(best.get("TE Metric"), 0),
                 "igp_metric":   _to_int(best.get("IGP Metric"), 0),
-                "neighbor_ip":  best.get("remote_ip") or "—",
+                "neighbor_ip":  best.get("Remote IP") or "—",
             })
         else:
             hops.append({
@@ -545,7 +565,8 @@ def export_graph_to_html(
     height: str = "95vh",
     width: str = "100vw",
     directed: bool = False,
-    node_positions: Optional[dict] = None
+    node_positions: Optional[dict] = None,
+    edge_label_fields: Optional[List[str]] = None,
 ) -> str:
     """
     Export a NetworkX graph as an interactive HTML visualization using PyVis.
@@ -599,11 +620,21 @@ def export_graph_to_html(
             f"TE: {edge_attrs.get('TE Metric', '')}",
         ])
 
+        if edge_label_fields:
+            parts = []
+            for field in edge_label_fields:
+                val = edge_attrs.get(field)
+                if val is not None and val != "":
+                    parts.append(str(val))
+            edge_label = " | ".join(parts)
+        else:
+            edge_label = ""
+
         edge_dict: dict = {
             "id": edge_id,
             "from": source,
             "to": target,
-            "label": "",
+            "label": edge_label,
             "title": title,
         }
 

@@ -80,7 +80,7 @@ class InvalidActionError(TedHandlerError):
 # Small helpers
 # -----------------------------
 
-def _normalize_node_name(node_name: Optional[str], *, to_upper: bool = True) -> Optional[str]:
+def _normalize_node_name(node_name: Optional[str], *, to_upper: bool = False) -> Optional[str]:
     """
     Normalize Junos-style node names like 'r1.0' -> 'r1' (optionally uppercased).
     """
@@ -160,7 +160,7 @@ def _find_neighbor_record_index(
 # Core: build/parse/validate
 # -----------------------------
 
-def gather_node_data(parsed_database: dict, *, normalize_nodes_upper: bool = True) -> AdjacencyDB:
+def gather_node_data(parsed_database: dict, *, normalize_nodes_upper: bool = False) -> AdjacencyDB:
     """
     Extract adjacency/link records from parsed TED XML content (from parse_xml()).
 
@@ -298,7 +298,7 @@ def list_nodes(db_path: str) -> List[str]:
     return sorted(adjacency_db.keys())
 
 
-def get_node_records(db_path: str, node_name: str, *, normalize_upper: bool = True) -> List[NeighborRecord]:
+def get_node_records(db_path: str, node_name: str, *, normalize_upper: bool = False) -> List[NeighborRecord]:
     adjacency_db = validate_db_format(db_path)
     normalized_node = node_name.upper() if normalize_upper else node_name
 
@@ -362,7 +362,7 @@ def add_or_remove_link_in_db_file(
     overwrite: bool = False,
     output_json: Optional[str] = None,
     write_pickle_cache: bool = False,
-    normalize_nodes_upper: bool = True,
+    normalize_nodes_upper: bool = False,
 ) -> str:
     adjacency_db = validate_db_format(db_path)
     add_or_remove_link_in_memory(
@@ -399,7 +399,7 @@ def add_or_remove_link_in_memory(
     teMetricBA: int,
     igpMetricBA: int,
     overwrite: bool = False,
-    normalize_nodes_upper: bool = True,
+    normalize_nodes_upper: bool = False,
 ) -> None:
     """
     Mutate adjacency DB in-memory: add/remove bidirectional link.
@@ -526,7 +526,7 @@ def add_node_in_db_file(
     node_name: str,
     output_json: Optional[str] = None,
     write_pickle_cache: bool = False,
-    normalize_nodes_upper: bool = True,
+    normalize_nodes_upper: bool = False,
 ) -> str:
     adjacency_db = validate_db_format(db_path)
     add_node_in_memory(
@@ -547,7 +547,7 @@ def remove_node_in_db_file(
     node_name: str,
     output_json: Optional[str] = None,
     write_pickle_cache: bool = False,
-    normalize_nodes_upper: bool = True,
+    normalize_nodes_upper: bool = False,
 ) -> str:
     adjacency_db = validate_db_format(db_path)
     remove_node_in_memory(
@@ -565,7 +565,7 @@ def add_node_in_memory(
     adjacency_db: AdjacencyDB,
     *,
     node_name: str,
-    normalize_nodes_upper: bool = True,
+    normalize_nodes_upper: bool = False,
 ) -> None:
     _ensure_adjacency_db_schema(adjacency_db)
 
@@ -581,7 +581,7 @@ def remove_node_in_memory(
     adjacency_db: AdjacencyDB,
     *,
     node_name: str,
-    normalize_nodes_upper: bool = True,
+    normalize_nodes_upper: bool = False,
 ) -> None:
     _ensure_adjacency_db_schema(adjacency_db)
 
@@ -612,7 +612,7 @@ def add_interface_metadata_in_memory(
     localIP: str,
     interface: str,
     description: str,
-    normalize_nodes_upper: bool = True,
+    normalize_nodes_upper: bool = False,
 ) -> None:
     """
     Add interface + description metadata to both sides of a link.
@@ -663,7 +663,7 @@ def add_interfaces_bulk_from_csv(
     *,
     output_json: Optional[str] = None,
     write_pickle_cache: bool = False,
-    normalize_nodes_upper: bool = True,
+    normalize_nodes_upper: bool = False,
 ) -> Tuple[str, BulkInterfaceResult]:
     rows = csv_to_list(csv_path)
     adjacency_db = validate_db_format(db_path)
@@ -686,7 +686,7 @@ def add_interfaces_bulk_in_memory(
     adjacency_db: AdjacencyDB,
     *,
     rows: List[List[str]],
-    normalize_nodes_upper: bool = True,
+    normalize_nodes_upper: bool = False,
 ) -> BulkInterfaceResult:
     _ensure_adjacency_db_schema(adjacency_db)
 
