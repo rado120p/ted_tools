@@ -154,12 +154,13 @@ def build_graph_from_adjacency(
             te_metric  = _to_int(neighbor_record.get("TE Metric"),  1.0)
 
             edge_attributes = {
-                "Local IP":   neighbor_record.get("Local IP"),
-                "Remote IP":  neighbor_record.get("Remote IP"),
-                "IGP Metric": igp_metric,
-                "TE Metric":  te_metric,
-                "local_ifl":  neighbor_record.get("Local Interface"),
-                "remote_ifl": neighbor_record.get("Remote Interface"),
+                "Local IP":     neighbor_record.get("Local IP"),
+                "Remote IP":    neighbor_record.get("Remote IP"),
+                "IGP Metric":   igp_metric,
+                "TE Metric":    te_metric,
+                "Admin Groups": neighbor_record.get("Admin Groups") or [],
+                "local_ifl":    neighbor_record.get("Local Interface"),
+                "remote_ifl":   neighbor_record.get("Remote Interface"),
             }
 
             graph.add_node(neighbor_name, label=neighbor_name)
@@ -292,6 +293,9 @@ def path_analysis(
     analysis_type: str = "primary",
     exclude_nodes: Optional[List[str]] = None,
     exclude_links: Optional[List[tuple]] = None,
+    include_groups: Optional[List[str]] = None,
+    include_type: Optional[str] = None,
+    exclude_groups: Optional[List[str]] = None,
 ) -> PathAnalysisResult:
     """
     Run one of five path analyses and return the result.
@@ -303,13 +307,26 @@ def path_analysis(
       first_link_failure — best path after removing the first next-hop link (src→first_hop)
       first_node_failure — best path after removing the first next-hop node
 
+    Admin group constraints (primary only):
+      include_groups / include_type  — include-any or include-all filter on link Admin Groups
+      exclude_groups                 — prune links that carry any of these groups
+
     Raises TedGraphError when no path exists or nodes are missing.
     """
     if analysis_type not in ANALYSIS_TYPES:
         raise TedGraphError(f"Unknown analysis type: {analysis_type!r}")
 
-    # Apply user-requested exclusions before any SPF runs.
+    # Apply user-requested node/link exclusions before any SPF runs.
     graph = _apply_exclusions(graph, exclude_nodes, exclude_links)
+
+    # Admin group constraints apply to Primary SPF only.
+    if analysis_type == "primary" and (include_groups or exclude_groups):
+        graph = _apply_admin_group_constraints(
+            graph,
+            include_groups=include_groups,
+            include_type=include_type,
+            exclude_groups=exclude_groups,
+        )
 
     def _spf(g: nx.Graph) -> tuple:
         try:
@@ -440,6 +457,7 @@ def path_hop_details(
                 "te_metric":    _to_int(best.get("TE Metric"), 0),
                 "igp_metric":   _to_int(best.get("IGP Metric"), 0),
                 "neighbor_ip":  best.get("Remote IP") or "—",
+                "admin_groups": best.get("Admin Groups") or [],
             })
         else:
             hops.append({
@@ -448,8 +466,77 @@ def path_hop_details(
                 "te_metric":    None,
                 "igp_metric":   None,
                 "neighbor_ip":  "—",
+                "admin_groups": [],
             })
     return hops
+
+
+def apply_admin_group_colors(
+    graph: nx.Graph,
+    group_color_pairs: List[tuple],
+) -> nx.Graph:
+    """
+    Return a copy of *graph* with edge colors set based on admin group membership.
+
+    group_color_pairs: ordered list of (group_name, hex_color).
+    Each edge is matched against the list in order — first match wins.
+    Edges that match no group keep their existing color (or the PyVis default).
+    Edges with multiple admin groups take the color of whichever group appears
+    first in group_color_pairs.
+    """
+    g = graph.copy()
+    for u, v, key, data in g.edges(keys=True, data=True):
+        edge_groups = set(data.get("Admin Groups") or [])
+        for group_name, color in group_color_pairs:
+            if group_name and group_name in edge_groups:
+                g[u][v][key]["color"] = color
+                break
+    return g
+
+
+def _apply_admin_group_constraints(
+    graph: nx.Graph,
+    include_groups: Optional[List[str]] = None,
+    include_type: Optional[str] = None,
+    exclude_groups: Optional[List[str]] = None,
+) -> nx.Graph:
+    """
+    Return a copy of *graph* with edges pruned according to admin group constraints.
+
+    include_type:
+      "include-any"  — keep edges that share AT LEAST ONE group with include_groups (OR)
+      "include-all"  — keep edges that contain ALL groups in include_groups (AND)
+    exclude_groups   — additionally remove edges that have ANY of these groups
+
+    Both constraints are independent and may be combined.
+    Edges with no Admin Groups are kept unless an include constraint is active
+    (they cannot satisfy an include-any or include-all requirement).
+    """
+    g = graph.copy()
+    include_set = set(include_groups) if include_groups else set()
+    exclude_set = set(exclude_groups) if exclude_groups else set()
+
+    edges_to_remove = []
+    for u, v, key, data in g.edges(keys=True, data=True):
+        edge_groups = set(data.get("Admin Groups") or [])
+
+        # Include constraint
+        if include_set:
+            if include_type == "include-any" and not (edge_groups & include_set):
+                edges_to_remove.append((u, v, key))
+                continue
+            if include_type == "include-all" and not include_set.issubset(edge_groups):
+                edges_to_remove.append((u, v, key))
+                continue
+
+        # Exclude constraint
+        if exclude_set and (edge_groups & exclude_set):
+            edges_to_remove.append((u, v, key))
+
+    for u, v, key in edges_to_remove:
+        g.remove_edge(u, v, key=key)
+
+    return g
 
 
 def _apply_exclusions(
@@ -615,10 +702,23 @@ def export_graph_to_html(
     edge_pair_index: Counter = Counter()
 
     for edge_id, (source, target, edge_attrs) in enumerate(canonical_edges):
-        title = "<br>".join([
-            f"IGP: {edge_attrs.get('IGP Metric', '')}",
-            f"TE: {edge_attrs.get('TE Metric', '')}",
-        ])
+        admin_groups = edge_attrs.get("Admin Groups") or []
+        local_ifl  = edge_attrs.get("local_ifl")  or ""
+        remote_ifl = edge_attrs.get("remote_ifl") or ""
+        title_parts = [
+            f"{source} → {target}",
+            f"Local IP:   {edge_attrs.get('Local IP', '')}",
+            f"Remote IP:  {edge_attrs.get('Remote IP', '')}",
+            f"IGP Metric: {edge_attrs.get('IGP Metric', '')}",
+            f"TE Metric:  {edge_attrs.get('TE Metric', '')}",
+        ]
+        if admin_groups:
+            title_parts.append(f"Admin Groups: {', '.join(admin_groups)}")
+        if local_ifl:
+            title_parts.append(f"Local IF:   {local_ifl}")
+        if remote_ifl:
+            title_parts.append(f"Remote IF:  {remote_ifl}")
+        title = "\n".join(title_parts)
 
         if edge_label_fields:
             parts = []
@@ -673,8 +773,9 @@ def export_graph_to_html(
             "color": {
             "inherit": false
             },
+            "width": 2,
             "font": {
-            "size": 10
+            "size": 12
             }
         },
         "nodes": {
@@ -715,8 +816,9 @@ def export_graph_to_html(
             "color": {
             "inherit": false
             },
+            "width": 2,
             "font": {
-            "size": 10
+            "size": 12
             }
         },
         "nodes": {

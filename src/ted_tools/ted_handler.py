@@ -16,6 +16,7 @@ Adjacency DB schema:
       "Remote IP": "y.y.y.y",
       "TE Metric": 700,
       "IGP Metric": 700,
+      "Admin Groups": ["core", "plane1"],   # 0 or more; per-direction (asymmetric allowed)
       "Local Interface": "...",
       "Remote Interface": "...",
       "Description": "..."
@@ -111,6 +112,28 @@ def _parse_metric(value: Any, default: int = 1) -> int:
 
 def _is_zero_ipv4(ip_str: Optional[str]) -> bool:
     return ip_str == "0.0.0.0" or ip_str is None
+
+
+def _extract_admin_groups(link_entry: dict) -> List[str]:
+    """
+    Extract admin-group-name values from a parsed ted-link entry.
+
+    XML structure (jxmlease-parsed):
+      admin-groups:
+        admin-group-name: "core"          # string  — single group
+        admin-group-name: ["core","x"]    # list    — multiple groups (rare but possible)
+
+    Returns a sorted, deduplicated list of group name strings.
+    """
+    admin_groups_raw = link_entry.get("admin-groups")
+    if not isinstance(admin_groups_raw, dict):
+        return []
+    names = admin_groups_raw.get("admin-group-name")
+    if names is None:
+        return []
+    if isinstance(names, list):
+        return sorted({str(n) for n in names})
+    return [str(names)]
 
 
 def _ensure_adjacency_db_schema(node_db: Any) -> AdjacencyDB:
@@ -217,12 +240,14 @@ def gather_node_data(parsed_database: dict, *, normalize_nodes_upper: bool = Fal
         # advertised by node_b with its own metric values.  Creating a synthetic
         # reverse here would assign node_a's metrics to node_b's direction, which
         # is incorrect for asymmetric topologies.
+        admin_groups = _extract_admin_groups(link_entry)
         forward_record: NeighborRecord = {
             "Neighbor": node_b,
             "Local IP": local_ip,
             "Remote IP": remote_ip,
             "TE Metric": te_metric,
             "IGP Metric": igp_metric,
+            "Admin Groups": admin_groups,
         }
 
         if forward_record not in adjacency_db.get(node_a, []):
@@ -359,6 +384,8 @@ def add_or_remove_link_in_db_file(
     igpMetricAB: int,
     teMetricBA: int,
     igpMetricBA: int,
+    adminGroupsAB: Optional[List[str]] = None,
+    adminGroupsBA: Optional[List[str]] = None,
     overwrite: bool = False,
     output_json: Optional[str] = None,
     write_pickle_cache: bool = False,
@@ -376,6 +403,8 @@ def add_or_remove_link_in_db_file(
         igpMetricAB=igpMetricAB,
         teMetricBA=teMetricBA,
         igpMetricBA=igpMetricBA,
+        adminGroupsAB=adminGroupsAB,
+        adminGroupsBA=adminGroupsBA,
         overwrite=overwrite,
         normalize_nodes_upper=normalize_nodes_upper,
     )
@@ -398,15 +427,19 @@ def add_or_remove_link_in_memory(
     igpMetricAB: int,
     teMetricBA: int,
     igpMetricBA: int,
+    adminGroupsAB: Optional[List[str]] = None,
+    adminGroupsBA: Optional[List[str]] = None,
     overwrite: bool = False,
     normalize_nodes_upper: bool = False,
 ) -> None:
     """
     Mutate adjacency DB in-memory: add/remove bidirectional link.
 
-    Metrics are per-direction (each router's own perspective):
-      - teMetricAB / igpMetricAB: nodeA → nodeB (stored under nodeA)
-      - teMetricBA / igpMetricBA: nodeB → nodeA (stored under nodeB)
+    Metrics and admin groups are per-direction (each router's own perspective):
+      - teMetricAB / igpMetricAB / adminGroupsAB: nodeA → nodeB (stored under nodeA)
+      - teMetricBA / igpMetricBA / adminGroupsBA: nodeB → nodeA (stored under nodeB)
+
+    Admin groups can be asymmetric (different groups per direction) and may be empty.
 
     Raises:
         InvalidActionError
@@ -427,6 +460,7 @@ def add_or_remove_link_in_memory(
         "Remote IP": remoteIP,
         "TE Metric": teMetricAB,
         "IGP Metric": igpMetricAB,
+        "Admin Groups": sorted(adminGroupsAB) if adminGroupsAB else [],
     }
     reverse_record: NeighborRecord = {
         "Neighbor": node_a,
@@ -434,6 +468,7 @@ def add_or_remove_link_in_memory(
         "Remote IP": localIP,
         "TE Metric": teMetricBA,
         "IGP Metric": igpMetricBA,
+        "Admin Groups": sorted(adminGroupsBA) if adminGroupsBA else [],
     }
 
     if normalized_action == "add":
@@ -744,6 +779,12 @@ class PathHop:
     igp_metric: int
     neighbor: str
     neighbor_ip: str
+    admin_groups: List[str] = None
+
+    def __post_init__(self):
+        # dataclass frozen=True requires object.__setattr__ for defaults
+        if self.admin_groups is None:
+            object.__setattr__(self, "admin_groups", [])
 
 
 def trace_path_by_ips(
@@ -782,6 +823,7 @@ def trace_path_by_ips(
                 igp_metric=_parse_metric(record.get("IGP Metric"), default=0),
                 neighbor=str(record.get("Neighbor", "-")),
                 neighbor_ip=str(record.get("Remote IP", "-")),
+                admin_groups=record.get("Admin Groups") or [],
             ))
         else:
             hops.append(PathHop(
