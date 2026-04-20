@@ -122,6 +122,28 @@ def _parse_optional_int(value: Any) -> Optional[int]:
         return None
 
 
+def _parse_bandwidth_bps(value: Any) -> Optional[int]:
+    """
+    Parse a Junos bandwidth value to bps int.
+    Handles strings like '400Gbps', '100Mbps', '10Kbps', '1000000000', or raw int.
+    Returns None if value is None or unparseable.
+    """
+    if value is None:
+        return None
+    s = str(value).strip().lower().replace("bps", "").replace("b/s", "")
+    try:
+        if s.endswith("g"):
+            return int(float(s[:-1]) * 1_000_000_000)
+        elif s.endswith("m"):
+            return int(float(s[:-1]) * 1_000_000)
+        elif s.endswith("k"):
+            return int(float(s[:-1]) * 1_000)
+        else:
+            return int(float(s))
+    except (ValueError, TypeError):
+        return None
+
+
 def _is_zero_ipv4(ip_str: Optional[str]) -> bool:
     return ip_str == "0.0.0.0" or ip_str is None
 
@@ -247,8 +269,8 @@ def gather_node_data(parsed_database: dict, *, normalize_nodes_upper: bool = Fal
         te_metric = _parse_metric(raw_te_metric)
         igp_metric = _parse_metric(raw_igp_metric)
 
-        static_bandwidth: Optional[int] = _parse_optional_int(validate_key(link_entry, "ted-link-static-bandwidth"))
-        reservable_bandwidth: Optional[int] = _parse_optional_int(validate_key(link_entry, "ted-link-reservable-bandwidth"))
+        static_bandwidth: Optional[int] = _parse_bandwidth_bps(validate_key(link_entry, "ted-link-static-bandwidth"))
+        reservable_bandwidth: Optional[int] = _parse_bandwidth_bps(validate_key(link_entry, "ted-link-reservable-bandwidth"))
 
         # Only store the forward record (node_a's own perspective).
         # The reverse direction (node_b → node_a) is a separate TED link entry
