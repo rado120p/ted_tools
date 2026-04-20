@@ -180,6 +180,56 @@ def _fetch_isis_config_metrics(dev) -> dict:
     return metrics
 
 
+def _fetch_rsvp_bandwidth(dev) -> dict:
+    """
+    Fetch RSVP interface bandwidth from device config.
+    Returns dict: { interface_name: static_bw_bps } using RSVP interface config.
+    Falls back to empty dict if RSVP is not configured.
+    """
+    try:
+        filter_xml = """
+        <configuration>
+          <protocols>
+            <rsvp>
+              <interface/>
+            </rsvp>
+          </protocols>
+        </configuration>
+        """
+        config = dev.rpc.get_config(filter_xml=filter_xml, options={"format": "json"})
+        ifaces = (config
+                  .get("configuration", {})
+                  .get("protocols", {})
+                  .get("rsvp", {})
+                  .get("interface", []))
+        result = {}
+        for iface in ifaces:
+            bw_raw = iface.get("bandwidth")
+            if bw_raw:
+                result[iface.get("name", "")] = _parse_bandwidth_string(bw_raw)
+        return result
+    except Exception:
+        return {}
+
+
+def _parse_bandwidth_string(s: str) -> Optional[int]:
+    """Parse Junos bandwidth strings like '1g', '100m', '1000000' to bps int."""
+    if s is None:
+        return None
+    s = str(s).strip().lower()
+    try:
+        if s.endswith("g"):
+            return int(float(s[:-1]) * 1_000_000_000)
+        elif s.endswith("m"):
+            return int(float(s[:-1]) * 1_000_000)
+        elif s.endswith("k"):
+            return int(float(s[:-1]) * 1_000)
+        else:
+            return int(float(s))
+    except (ValueError, TypeError):
+        return None
+
+
 def _fetch_interface_ips(dev) -> dict:
     """
     Fetch interface IP addresses from configuration.
@@ -240,7 +290,12 @@ def _build_config_metric_map(isis_metrics: dict, iface_ips: dict) -> dict:
     return result
 
 
-def _config_matches_db(config_map: dict, db_records: list) -> bool:
+def _config_matches_db(
+    config_map: dict,
+    db_records: list,
+    rsvp_bw: dict = None,
+    iface_map: dict = None,
+) -> bool:
     """
     True when the IS-IS config metric map matches the DB record set for a node.
 
@@ -249,11 +304,16 @@ def _config_matches_db(config_map: dict, db_records: list) -> bool:
     excluded from the comparison.
 
     Both the set of Local IPs and their metric values must agree for a match.
+
+    If rsvp_bw and iface_map are provided, also compares Static Bandwidth for
+    interfaces where RSVP bandwidth is configured. Only fails if RSVP BW is
+    present AND differs from the DB value.
     """
     db_map = {
         str(r.get("Local IP", "")): {
             "IGP Metric": _safe_int(r.get("IGP Metric")),
             "TE Metric": _safe_int(r.get("TE Metric")),
+            "Static Bandwidth": r.get("Static Bandwidth"),
         }
         for r in db_records
         if r.get("Local IP")
@@ -269,10 +329,35 @@ def _config_matches_db(config_map: dict, db_records: list) -> bool:
         return False
 
     for ip, cfg_metrics in config_map.items():
-        db_metrics = db_map.get(ip)
+        db_entry = db_map.get(ip)
+        db_metrics = {"IGP Metric": db_entry["IGP Metric"], "TE Metric": db_entry["TE Metric"]}
         if cfg_metrics != db_metrics:
             log.debug("Metric mismatch for %s — config: %s  db: %s", ip, cfg_metrics, db_metrics)
             return False
+
+    # Bandwidth comparison (only when RSVP data available)
+    if rsvp_bw and iface_map:
+        # Build reverse map: ip -> interface_name
+        ip_to_iface: dict = {}
+        for iface_name, ips in iface_map.items():
+            for ip in ips:
+                ip_to_iface[ip] = iface_name
+
+        for ip, db_entry in db_map.items():
+            iface_name = ip_to_iface.get(ip)
+            if iface_name is None:
+                continue
+            rsvp_bw_val = rsvp_bw.get(iface_name)
+            if rsvp_bw_val is None:
+                # RSVP BW not configured for this interface — skip check
+                continue
+            db_bw = db_entry.get("Static Bandwidth")
+            if db_bw != rsvp_bw_val:
+                log.debug(
+                    "Bandwidth mismatch for %s (%s) — rsvp: %s  db: %s",
+                    ip, iface_name, rsvp_bw_val, db_bw,
+                )
+                return False
 
     return True
 
@@ -308,6 +393,7 @@ def _verify_one_node(
         ) as dev:
             isis_metrics = _fetch_isis_config_metrics(dev)
             iface_ips    = _fetch_interface_ips(dev)
+            rsvp_bw      = _fetch_rsvp_bandwidth(dev)
     except Exception as exc:
         log.debug("verify_one_node: unreachable — %s", exc)
         return NodeVerifyResult(
@@ -333,7 +419,7 @@ def _verify_one_node(
         [r.get("Local IP") for r in db2_records],
     )
     n_cfg = len(config_map)
-    if _config_matches_db(config_map, db1_records):
+    if _config_matches_db(config_map, db1_records, rsvp_bw=rsvp_bw, iface_map=iface_ips):
         return NodeVerifyResult(
             node=node, host=host, status="matches_db1",
             detail=(
@@ -344,7 +430,7 @@ def _verify_one_node(
             db1_records=db1_records,
             db2_records=db2_records,
         )
-    if _config_matches_db(config_map, db2_records):
+    if _config_matches_db(config_map, db2_records, rsvp_bw=rsvp_bw, iface_map=iface_ips):
         return NodeVerifyResult(
             node=node, host=host, status="matches_db2",
             detail=(

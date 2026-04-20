@@ -17,6 +17,8 @@ Adjacency DB schema:
       "TE Metric": 700,
       "IGP Metric": 700,
       "Admin Groups": ["core", "plane1"],   # 0 or more; per-direction (asymmetric allowed)
+      "Static Bandwidth": 1000000000,       # bps; per-direction (asymmetric allowed); None if absent
+      "Reservable Bandwidth": 800000000,    # bps; per-direction (asymmetric allowed); None if absent
       "Local Interface": "...",
       "Remote Interface": "...",
       "Description": "..."
@@ -108,6 +110,16 @@ def _parse_metric(value: Any, default: int = 1) -> int:
         return int(float(str(value)))
     except Exception:
         return default
+
+
+def _parse_optional_int(value: Any) -> Optional[int]:
+    """Parse a raw value to int; return None if value is None or unparseable."""
+    if value is None:
+        return None
+    try:
+        return int(float(str(value)))
+    except Exception:
+        return None
 
 
 def _is_zero_ipv4(ip_str: Optional[str]) -> bool:
@@ -235,6 +247,9 @@ def gather_node_data(parsed_database: dict, *, normalize_nodes_upper: bool = Fal
         te_metric = _parse_metric(raw_te_metric)
         igp_metric = _parse_metric(raw_igp_metric)
 
+        static_bandwidth: Optional[int] = _parse_optional_int(validate_key(link_entry, "ted-link-static-bandwidth"))
+        reservable_bandwidth: Optional[int] = _parse_optional_int(validate_key(link_entry, "ted-link-reservable-bandwidth"))
+
         # Only store the forward record (node_a's own perspective).
         # The reverse direction (node_b → node_a) is a separate TED link entry
         # advertised by node_b with its own metric values.  Creating a synthetic
@@ -248,6 +263,8 @@ def gather_node_data(parsed_database: dict, *, normalize_nodes_upper: bool = Fal
             "TE Metric": te_metric,
             "IGP Metric": igp_metric,
             "Admin Groups": admin_groups,
+            "Static Bandwidth": static_bandwidth,
+            "Reservable Bandwidth": reservable_bandwidth,
         }
 
         if forward_record not in adjacency_db.get(node_a, []):
@@ -386,6 +403,10 @@ def add_or_remove_link_in_db_file(
     igpMetricBA: int,
     adminGroupsAB: Optional[List[str]] = None,
     adminGroupsBA: Optional[List[str]] = None,
+    staticBandwidthAB: Optional[int] = None,
+    staticBandwidthBA: Optional[int] = None,
+    reservableBandwidthAB: Optional[int] = None,
+    reservableBandwidthBA: Optional[int] = None,
     overwrite: bool = False,
     output_json: Optional[str] = None,
     write_pickle_cache: bool = False,
@@ -405,6 +426,10 @@ def add_or_remove_link_in_db_file(
         igpMetricBA=igpMetricBA,
         adminGroupsAB=adminGroupsAB,
         adminGroupsBA=adminGroupsBA,
+        staticBandwidthAB=staticBandwidthAB,
+        staticBandwidthBA=staticBandwidthBA,
+        reservableBandwidthAB=reservableBandwidthAB,
+        reservableBandwidthBA=reservableBandwidthBA,
         overwrite=overwrite,
         normalize_nodes_upper=normalize_nodes_upper,
     )
@@ -429,17 +454,22 @@ def add_or_remove_link_in_memory(
     igpMetricBA: int,
     adminGroupsAB: Optional[List[str]] = None,
     adminGroupsBA: Optional[List[str]] = None,
+    staticBandwidthAB: Optional[int] = None,
+    staticBandwidthBA: Optional[int] = None,
+    reservableBandwidthAB: Optional[int] = None,
+    reservableBandwidthBA: Optional[int] = None,
     overwrite: bool = False,
     normalize_nodes_upper: bool = False,
 ) -> None:
     """
     Mutate adjacency DB in-memory: add/remove bidirectional link.
 
-    Metrics and admin groups are per-direction (each router's own perspective):
-      - teMetricAB / igpMetricAB / adminGroupsAB: nodeA → nodeB (stored under nodeA)
-      - teMetricBA / igpMetricBA / adminGroupsBA: nodeB → nodeA (stored under nodeB)
+    Metrics, admin groups, and bandwidths are per-direction (each router's own perspective):
+      - *AB params: nodeA → nodeB (stored under nodeA)
+      - *BA params: nodeB → nodeA (stored under nodeB)
 
-    Admin groups can be asymmetric (different groups per direction) and may be empty.
+    Admin groups and bandwidths can be asymmetric. Bandwidth values are in bps; pass None
+    if not applicable.
 
     Raises:
         InvalidActionError
@@ -461,6 +491,8 @@ def add_or_remove_link_in_memory(
         "TE Metric": teMetricAB,
         "IGP Metric": igpMetricAB,
         "Admin Groups": sorted(adminGroupsAB) if adminGroupsAB else [],
+        "Static Bandwidth": staticBandwidthAB,
+        "Reservable Bandwidth": reservableBandwidthAB,
     }
     reverse_record: NeighborRecord = {
         "Neighbor": node_a,
@@ -469,6 +501,8 @@ def add_or_remove_link_in_memory(
         "TE Metric": teMetricBA,
         "IGP Metric": igpMetricBA,
         "Admin Groups": sorted(adminGroupsBA) if adminGroupsBA else [],
+        "Static Bandwidth": staticBandwidthBA,
+        "Reservable Bandwidth": reservableBandwidthBA,
     }
 
     if normalized_action == "add":

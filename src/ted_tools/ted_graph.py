@@ -154,13 +154,15 @@ def build_graph_from_adjacency(
             te_metric  = _to_int(neighbor_record.get("TE Metric"),  1.0)
 
             edge_attributes = {
-                "Local IP":     neighbor_record.get("Local IP"),
-                "Remote IP":    neighbor_record.get("Remote IP"),
-                "IGP Metric":   igp_metric,
-                "TE Metric":    te_metric,
-                "Admin Groups": neighbor_record.get("Admin Groups") or [],
-                "local_ifl":    neighbor_record.get("Local Interface"),
-                "remote_ifl":   neighbor_record.get("Remote Interface"),
+                "Local IP":              neighbor_record.get("Local IP"),
+                "Remote IP":             neighbor_record.get("Remote IP"),
+                "IGP Metric":            igp_metric,
+                "TE Metric":             te_metric,
+                "Admin Groups":          neighbor_record.get("Admin Groups") or [],
+                "local_ifl":             neighbor_record.get("Local Interface"),
+                "remote_ifl":            neighbor_record.get("Remote Interface"),
+                "Static Bandwidth":      neighbor_record.get("Static Bandwidth"),
+                "Reservable Bandwidth":  neighbor_record.get("Reservable Bandwidth"),
             }
 
             graph.add_node(neighbor_name, label=neighbor_name)
@@ -296,6 +298,8 @@ def path_analysis(
     include_groups: Optional[List[str]] = None,
     include_type: Optional[str] = None,
     exclude_groups: Optional[List[str]] = None,
+    min_static_bw: Optional[int] = None,
+    min_reservable_bw: Optional[int] = None,
 ) -> PathAnalysisResult:
     """
     Run one of five path analyses and return the result.
@@ -327,6 +331,23 @@ def path_analysis(
             include_type=include_type,
             exclude_groups=exclude_groups,
         )
+
+    # Bandwidth constraints: prune edges that don't meet the threshold.
+    if min_static_bw is not None or min_reservable_bw is not None:
+        graph = graph.copy()
+        to_remove = []
+        for u, v, key, data in graph.edges(keys=True, data=True):
+            if min_static_bw is not None:
+                bw = data.get("Static Bandwidth")
+                if bw is None or bw < min_static_bw:
+                    to_remove.append((u, v, key))
+                    continue
+            if min_reservable_bw is not None:
+                bw = data.get("Reservable Bandwidth")
+                if bw is None or bw < min_reservable_bw:
+                    to_remove.append((u, v, key))
+        for u, v, key in to_remove:
+            graph.remove_edge(u, v, key)
 
     def _spf(g: nx.Graph) -> tuple:
         try:
@@ -452,21 +473,25 @@ def path_hop_details(
                 key=lambda d: _to_int(d.get(metric_attr), 1),
             )
             hops.append({
-                "ingress_node": u,
-                "neighbor":     v,
-                "te_metric":    _to_int(best.get("TE Metric"), 0),
-                "igp_metric":   _to_int(best.get("IGP Metric"), 0),
-                "neighbor_ip":  best.get("Remote IP") or "—",
-                "admin_groups": best.get("Admin Groups") or [],
+                "ingress_node":  u,
+                "neighbor":      v,
+                "te_metric":     _to_int(best.get("TE Metric"), 0),
+                "igp_metric":    _to_int(best.get("IGP Metric"), 0),
+                "neighbor_ip":   best.get("Remote IP") or "—",
+                "admin_groups":  best.get("Admin Groups") or [],
+                "static_bw":     best.get("Static Bandwidth"),
+                "reservable_bw": best.get("Reservable Bandwidth"),
             })
         else:
             hops.append({
-                "ingress_node": u,
-                "neighbor":     v,
-                "te_metric":    None,
-                "igp_metric":   None,
-                "neighbor_ip":  "—",
-                "admin_groups": [],
+                "ingress_node":  u,
+                "neighbor":      v,
+                "te_metric":     None,
+                "igp_metric":    None,
+                "neighbor_ip":   "—",
+                "admin_groups":  [],
+                "static_bw":     None,
+                "reservable_bw": None,
             })
     return hops
 
