@@ -921,9 +921,17 @@ class DbDiff:
     changed: List[LinkChange]       # same link (Neighbor + Local IP), different metrics
 
 
+_DIFF_EXCLUDE = {"Reservable Bandwidth"}
+
+
 def _link_key(record: NeighborRecord) -> tuple:
     """Identity key for a directed link: (Neighbor, Local IP)."""
     return (str(record.get("Neighbor", "")), str(record.get("Local IP", "")))
+
+
+def _link_values(record: NeighborRecord) -> dict:
+    """Record fields used for change detection (excludes dynamic attributes)."""
+    return {k: v for k, v in record.items() if k not in _DIFF_EXCLUDE}
 
 
 def compare_dbs(db_path_1: str, db_path_2: str) -> Dict[str, DbDiff]:
@@ -954,7 +962,7 @@ def compare_dbs(db_path_1: str, db_path_2: str) -> Dict[str, DbDiff]:
         changed  = [
             LinkChange(record_old=idx1[k], record_new=idx2[k])
             for k in idx1
-            if k in idx2 and idx1[k] != idx2[k]
+            if k in idx2 and _link_values(idx1[k]) != _link_values(idx2[k])
         ]
 
         if removed or added or changed:

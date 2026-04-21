@@ -105,6 +105,8 @@ class NodeVerifyResult:
     config_map: Optional[dict] = None   # {local_ip: {"IGP Metric": ..., "TE Metric": ...}}
     db1_records: Optional[list] = None  # raw records from snapshot A for this node
     db2_records: Optional[list] = None  # raw records from snapshot B for this node
+    rsvp_bw: Optional[dict] = None     # {interface_name: bps} from live device
+    iface_map: Optional[dict] = None   # {interface_name: [ip, ...]} from live device
 
 
 def _safe_int(value) -> Optional[int]:
@@ -187,28 +189,22 @@ def _fetch_rsvp_bandwidth(dev) -> dict:
     Falls back to empty dict if RSVP is not configured.
     """
     try:
-        filter_xml = """
-        <configuration>
-          <protocols>
-            <rsvp>
-              <interface/>
-            </rsvp>
-          </protocols>
-        </configuration>
-        """
-        config = dev.rpc.get_config(filter_xml=filter_xml, options={"format": "json"})
-        ifaces = (config
-                  .get("configuration", {})
-                  .get("protocols", {})
-                  .get("rsvp", {})
-                  .get("interface", []))
+        filter_xml = etree.fromstring(
+            "<configuration>"
+            "  <protocols><rsvp><interface/></rsvp></protocols>"
+            "</configuration>"
+        )
+        config = dev.rpc.get_config(filter_xml=filter_xml)
+        log.debug("RSVP config XML:\n%s", etree.tostring(config, pretty_print=True).decode())
         result = {}
-        for iface in ifaces:
-            bw_raw = iface.get("bandwidth")
-            if bw_raw:
-                result[iface.get("name", "")] = _parse_bandwidth_string(bw_raw)
+        for iface in config.findall(".//rsvp/interface"):
+            name_el = iface.find("name")
+            bw_el = iface.find("bandwidth")
+            if name_el is not None and bw_el is not None:
+                result[name_el.text.strip()] = _parse_bandwidth_string(bw_el.text)
         return result
     except Exception:
+        log.debug("EXCEPTION occurred for RSVP config XML retrieval")
         return {}
 
 
@@ -374,10 +370,10 @@ def _verify_one_node(
     timeout: int,
 ) -> NodeVerifyResult:
     """
-    Connect to *host*, fetch IS-IS interface **configuration** (not TED), and
-    compare configured metrics with DB snapshots.
+    Connect to *host*, fetch IS-IS and RSVP interface config, and
+    compare configured metrics/bw with DB snapshots.
 
-    Configuration is the source of truth: metrics only change when an
+    Configuration is the source of truth: metrics/static_bw only change when an
     administrator manually reconfigures them, so transient link failures do not
     affect the result.
     """
@@ -429,6 +425,8 @@ def _verify_one_node(
             config_map=config_map,
             db1_records=db1_records,
             db2_records=db2_records,
+            rsvp_bw=rsvp_bw,
+            iface_map=iface_ips,
         )
     if _config_matches_db(config_map, db2_records, rsvp_bw=rsvp_bw, iface_map=iface_ips):
         return NodeVerifyResult(
@@ -440,6 +438,8 @@ def _verify_one_node(
             config_map=config_map,
             db1_records=db1_records,
             db2_records=db2_records,
+            rsvp_bw=rsvp_bw,
+            iface_map=iface_ips,
         )
     return NodeVerifyResult(
         node=node, host=host, status="matches_neither",
@@ -450,6 +450,8 @@ def _verify_one_node(
         config_map=config_map,
         db1_records=db1_records,
         db2_records=db2_records,
+        rsvp_bw=rsvp_bw,
+        iface_map=iface_ips,
     )
 
 
