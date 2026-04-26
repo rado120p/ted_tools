@@ -31,6 +31,18 @@ from ted_tools.config import XML_DIR
 from ted_tools.exception_handler import ExceptionHandler
 
 
+# Hardened XML parser. Prevents:
+# - XXE: external entity expansion (e.g. <!ENTITY xxe SYSTEM "file:///etc/passwd">)
+# - Billion-laughs: recursive entity expansion DoS
+# - SSRF via DTD external references with no_network=True
+# - Memory exhaustion on deeply nested trees with huge_tree=False
+_SAFE_XML_PARSER = etree.XMLParser(
+    resolve_entities=False,
+    no_network=True,
+    huge_tree=False,
+)
+
+
 # -----------------------------
 # Exceptions (web-friendly)
 # -----------------------------
@@ -130,7 +142,8 @@ def _fetch_isis_config_metrics(dev) -> dict:
     filter_xml = etree.fromstring(
         "<configuration>"
         "  <protocols><isis><interface/></isis></protocols>"
-        "</configuration>"
+        "</configuration>",
+        parser=_SAFE_XML_PARSER,
     )
     isis_cfg = dev.rpc.get_config(filter_xml=filter_xml)
     log.debug("IS-IS config XML:\n%s", etree.tostring(isis_cfg, pretty_print=True).decode())
@@ -192,7 +205,8 @@ def _fetch_rsvp_bandwidth(dev) -> dict:
         filter_xml = etree.fromstring(
             "<configuration>"
             "  <protocols><rsvp><interface/></rsvp></protocols>"
-            "</configuration>"
+            "</configuration>",
+            parser=_SAFE_XML_PARSER,
         )
         config = dev.rpc.get_config(filter_xml=filter_xml)
         log.debug("RSVP config XML:\n%s", etree.tostring(config, pretty_print=True).decode())
@@ -232,7 +246,8 @@ def _fetch_interface_ips(dev) -> dict:
     Returns {full_interface_name: [ip, ...]}  e.g. {"ge-0/0/0.0": ["10.0.0.1"]}.
     """
     filter_xml = etree.fromstring(
-        "<configuration><interfaces/></configuration>"
+        "<configuration><interfaces/></configuration>",
+        parser=_SAFE_XML_PARSER,
     )
     iface_cfg = dev.rpc.get_config(filter_xml=filter_xml)
     log.debug("Interface config XML:\n%s", etree.tostring(iface_cfg, pretty_print=True).decode())

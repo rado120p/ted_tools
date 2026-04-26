@@ -18,6 +18,18 @@ import jxmlease
 from lxml import etree
 
 
+# Hardened XML parser. Prevents:
+# - XXE: external entity expansion (e.g. <!ENTITY xxe SYSTEM "file:///etc/passwd">)
+# - Billion-laughs: recursive entity expansion DoS
+# - SSRF via DTD external references with no_network=True
+# - Memory exhaustion on deeply nested trees with huge_tree=False
+_SAFE_XML_PARSER = etree.XMLParser(
+    resolve_entities=False,
+    no_network=True,
+    huge_tree=False,
+)
+
+
 T = TypeVar("T")
 
 
@@ -76,7 +88,7 @@ def parse_xml(xml_file: Union[str, Path]) -> dict:
     Parse an XML file into a Python dictionary-like structure via jxmlease.
     """
     xml_path = Path(xml_file)
-    root = etree.parse(str(xml_path)).getroot()
+    root = etree.parse(str(xml_path), parser=_SAFE_XML_PARSER).getroot()
     return jxmlease.parse(etree.tostring(root, pretty_print=True))
 
 @file_error_handler()
