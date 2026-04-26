@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ted-link-information>
+  <ted-link style="detail">
+    <ted-link-from>node-A.00(150.0.0.1)</ted-link-from>
+    <ted-link-to>node-B.00(150.0.0.2)</ted-link-to>
+    <ted-link-local-address>10.0.0.1</ted-link-local-address>
+    <ted-link-remote-address>10.0.0.2</ted-link-remote-address>
+    <ted-link-local-ifindex>1001</ted-link-local-ifindex>
+    <ted-link-remote-ifindex>1002</ted-link-remote-ifindex>
+    <ted-link-link-out>0</ted-link-link-out>
+    <ted-link-metric>100000</ted-link-metric>
+    <ted-link-igp-metric>10000</ted-link-igp-metric>
+    <ted-link-static-bandwidth>400Gbps</ted-link-static-bandwidth>
+    <ted-link-reservable-bandwidth>400Gbps</ted-link-reservable-bandwidth>
+    <admin-groups heading="  ">
+      <color>0x2</color>
+      <admin-group-name>plane1</admin-group-name>
+    </admin-groups>
+  </ted-link>
+  <ted-link style="detail">
+    <ted-link-from>node-B.00(150.0.0.2)</ted-link-from>
+    <ted-link-to>node-A.00(150.0.0.1)</ted-link-to>
+    <ted-link-local-address>10.0.0.2</ted-link-local-address>
+    <ted-link-remote-address>10.0.0.1</ted-link-remote-address>
+    <ted-link-local-ifindex>1002</ted-link-local-ifindex>
+    <ted-link-remote-ifindex>1001</ted-link-remote-ifindex>
+    <ted-link-link-out>0</ted-link-link-out>
+    <ted-link-metric>100000</ted-link-metric>
+    <ted-link-igp-metric>10000</ted-link-igp-metric>
+    <ted-link-static-bandwidth>400Gbps</ted-link-static-bandwidth>
+    <ted-link-reservable-bandwidth>400Gbps</ted-link-reservable-bandwidth>
+    <admin-groups heading="  ">
+      <color>0x2</color>
+      <admin-group-name>plane1</admin-group-name>
+    </admin-groups>
+  </ted-link>
+  <ted-link style="detail">
+    <ted-link-from>node-B.00(150.0.0.2)</ted-link-from>
+    <ted-link-to>node-C.00(150.0.0.3)</ted-link-to>
+    <ted-link-local-address>10.0.0.5</ted-link-local-address>
+    <ted-link-remote-address>10.0.0.6</ted-link-remote-address>
+    <ted-link-local-ifindex>1003</ted-link-local-ifindex>
+    <ted-link-remote-ifindex>1004</ted-link-remote-ifindex>
+    <ted-link-link-out>0</ted-link-link-out>
+    <ted-link-metric>50000</ted-link-metric>
+    <ted-link-igp-metric>5000</ted-link-igp-metric>
+    <ted-link-static-bandwidth>100Gbps</ted-link-static-bandwidth>
+    <ted-link-reservable-bandwidth>100Gbps</ted-link-reservable-bandwidth>
+    <admin-groups heading="  ">
+      <color>0x4</color>
+      <admin-group-name>plane2</admin-group-name>
+    </admin-groups>
+  </ted-link>
+  <ted-link style="detail">
+    <ted-link-from>node-C.00(150.0.0.3)</ted-link-from>
+    <ted-link-to>node-B.00(150.0.0.2)</ted-link-to>
+    <ted-link-local-address>10.0.0.6</ted-link-local-address>
+    <ted-link-remote-address>10.0.0.5</ted-link-remote-address>
+    <ted-link-local-ifindex>1004</ted-link-local-ifindex>
+    <ted-link-remote-ifindex>1003</ted-link-remote-ifindex>
+    <ted-link-link-out>0</ted-link-link-out>
+    <ted-link-metric>50000</ted-link-metric>
+    <ted-link-igp-metric>5000</ted-link-igp-metric>
+    <ted-link-static-bandwidth>100Gbps</ted-link-static-bandwidth>
+    <ted-link-reservable-bandwidth>100Gbps</ted-link-reservable-bandwidth>
+    <admin-groups heading="  ">
+      <color>0x4</color>
+      <admin-group-name>plane2</admin-group-name>
+    </admin-groups>
+  </ted-link>
+</ted-link-information>
