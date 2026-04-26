@@ -40,10 +40,8 @@ from ted_tools.config import DB_DIR, EXPORT_DIR
 from ted_tools.db_handler import (
     csv_to_list,
     load_json_db,
-    load_pickle_db,
     parse_xml,
     save_json_db,
-    save_pickle_db,
     validate_key,
 )
 
@@ -64,7 +62,7 @@ class EmptyTedDataError(TedHandlerError):
 
 
 class UnsupportedDbFormatError(TedHandlerError):
-    """Raised when a DB path is not .xml or .pickle."""
+    """Raised when a DB path is not .xml or .json."""
 
 
 class NodeNotFoundError(TedHandlerError):
@@ -311,26 +309,17 @@ def validate_db_format(db_path: str) -> AdjacencyDB:
         adjacency_db = load_json_db(str(path))
         return _ensure_adjacency_db_schema(adjacency_db)
 
-    if suffix == ".pickle":
-        adjacency_db = load_pickle_db(str(path))
-        return _ensure_adjacency_db_schema(adjacency_db)
-
-    raise UnsupportedDbFormatError("Unsupported DB type. Must be '.xml', '.json', or '.pickle'.")
+    raise UnsupportedDbFormatError("Unsupported DB type. Must be '.xml' or '.json'.")
 
 
 def save_db(
     adjacency_db: AdjacencyDB,
     output_json: Optional[str] = None,
-    write_pickle_cache: bool = False,
 ) -> str:
     _ensure_adjacency_db_schema(adjacency_db)
 
     json_path = Path(output_json) if output_json else _default_json_output_path()
     save_json_db(str(json_path), adjacency_db)
-
-    if write_pickle_cache:
-        pickle_path = json_path.with_suffix(".pickle")
-        save_pickle_db(str(pickle_path), adjacency_db)
 
     return str(json_path)
 
@@ -339,7 +328,6 @@ def build_db_from_xml(
     xml_path: str,
     output_json: Optional[str] = None,
     output_name: Optional[str] = None,
-    write_pickle_cache: bool = False,
 ) -> str:
     parsed_database = parse_xml(xml_path)
     adjacency_db = gather_node_data(parsed_database)
@@ -349,7 +337,6 @@ def build_db_from_xml(
     return save_db(
         adjacency_db,
         output_json=output_json,
-        write_pickle_cache=write_pickle_cache,
     )
 
 
@@ -431,7 +418,6 @@ def add_or_remove_link_in_db_file(
     reservableBandwidthBA: Optional[int] = None,
     overwrite: bool = False,
     output_json: Optional[str] = None,
-    write_pickle_cache: bool = False,
     normalize_nodes_upper: bool = False,
 ) -> str:
     adjacency_db = validate_db_format(db_path)
@@ -458,7 +444,6 @@ def add_or_remove_link_in_db_file(
     return save_db(
         adjacency_db,
         output_json=output_json,
-        write_pickle_cache=write_pickle_cache,
     )
 
 
@@ -616,7 +601,6 @@ def add_node_in_db_file(
     *,
     node_name: str,
     output_json: Optional[str] = None,
-    write_pickle_cache: bool = False,
     normalize_nodes_upper: bool = False,
 ) -> str:
     adjacency_db = validate_db_format(db_path)
@@ -628,7 +612,6 @@ def add_node_in_db_file(
     return save_db(
         adjacency_db,
         output_json=output_json,
-        write_pickle_cache=write_pickle_cache,
     )
 
 
@@ -637,7 +620,6 @@ def remove_node_in_db_file(
     *,
     node_name: str,
     output_json: Optional[str] = None,
-    write_pickle_cache: bool = False,
     normalize_nodes_upper: bool = False,
 ) -> str:
     adjacency_db = validate_db_format(db_path)
@@ -649,7 +631,6 @@ def remove_node_in_db_file(
     return save_db(
         adjacency_db,
         output_json=output_json,
-        write_pickle_cache=write_pickle_cache,
     )
 
 def add_node_in_memory(
@@ -753,7 +734,6 @@ def add_interfaces_bulk_from_csv(
     csv_path: str,
     *,
     output_json: Optional[str] = None,
-    write_pickle_cache: bool = False,
     normalize_nodes_upper: bool = False,
 ) -> Tuple[str, BulkInterfaceResult]:
     rows = csv_to_list(csv_path)
@@ -768,7 +748,6 @@ def add_interfaces_bulk_from_csv(
     output_path = save_db(
         adjacency_db,
         output_json=output_json,
-        write_pickle_cache=write_pickle_cache,
     )
     return output_path, summary
 
@@ -977,7 +956,6 @@ def merge_dbs(
     *,
     accepted_changes: List[str],
     output_json: Optional[str] = None,
-    write_pickle_cache: bool = False,
 ) -> str:
     """
     Merge DB1 with a user-selected subset of changes from DB2.
@@ -1043,8 +1021,7 @@ def merge_dbs(
                         merged[node][i] = new_record
                         break
 
-    return save_db(merged, output_json=output_json,
-                   write_pickle_cache=write_pickle_cache)
+    return save_db(merged, output_json=output_json)
 
 
 def export_db_to_csv(db_path: str, output_csv: Optional[str] = None) -> str:
