@@ -30,9 +30,9 @@ pytest tests/test_smoke_imports.py  # run single file
 |--------|------|
 | `config.py` | Workspace path setup via `TED_BASE_DIR` env var; creates `xml/`, `db/`, `exports/`, `layouts/` dirs |
 | `exception_handler.py` | Decorator-based wrapping of PyEZ/Netmiko exceptions into typed app exceptions |
-| `db_handler.py` | Low-level file I/O: XML parsing (`jxmlease`), pickle/JSON serialization |
+| `db_handler.py` | Low-level file I/O: XML parsing (`jxmlease`), JSON serialization |
 | `get_ted.py` | NETCONF device connection; fetches TED RPC; parallel node verification via `ThreadPoolExecutor` |
-| `ted_handler.py` | Parses TED XML into an adjacency DB (`{node: [neighbor_records]}`); CRUD operations on nodes/links; serializes to JSON/pickle |
+| `ted_handler.py` | Parses TED XML into an adjacency DB (`{node: [neighbor_records]}`); CRUD operations on nodes/links; serializes to JSON |
 | `ted_graph.py` | Builds `nx.MultiDiGraph` from adjacency DB; path analysis (primary, link-disjoint, node-disjoint, failure scenarios); PyVis HTML export |
 
 ### Data flow
@@ -40,7 +40,7 @@ pytest tests/test_smoke_imports.py  # run single file
 ```
 Device (NETCONF/RPC)
   → get_ted.py          → XML files (workspace/xml/)
-  → ted_handler.py      → adjacency DB (workspace/db/, JSON/pickle)
+  → ted_handler.py      → adjacency DB (workspace/db/, JSON)
   → ted_graph.py        → graph analysis + HTML export (workspace/exports/)
 ```
 
@@ -48,7 +48,7 @@ Device (NETCONF/RPC)
 
 - **Pure library API**: no `argparse`, `input()`, `getpass()`, or `sys.exit()`. All functions return typed dataclasses or raise typed exceptions — suitable for web backend integration.
 - **`nx.MultiDiGraph`**: preserves parallel links and asymmetric TE/IGP metrics between the same node pair.
-- **Adjacency DB format**: `dict[str, list[dict]]` — JSON-serializable, human-readable. Pickle used as a cache layer only.
+- **Adjacency DB format**: `dict[str, list[dict]]` — JSON-serializable, human-readable.
 - **Node name normalization**: Junos names like `r1.0` are stripped to `r1` (optionally uppercased).
 - **Admin groups**: asymmetric per-direction per-edge; used as path constraints in `path_analysis()`.
 - **Device verification**: compares IS-IS config snapshots (not live TED) to distinguish transient vs. confirmed topology changes.
