@@ -32,12 +32,12 @@ def test_validate_db_format_rejects_other_suffix(tmp_path):
 
 
 def test_compare_dbs_no_diff(sample_db_json):
+    """Comparing a DB to itself yields no added/removed/changed anywhere."""
     diff = compare_dbs(str(sample_db_json), str(sample_db_json))
-    # Identical DBs → no changes anywhere
-    assert all(
-        not (entry.added or entry.removed or entry.changed)
-        for entry in diff.values()
-    ) or len(diff) == 0
+    for entry in diff.values():
+        assert not entry.added
+        assert not entry.removed
+        assert not entry.changed
 
 
 def test_compare_dbs_added_link(sample_db_json, sample_db_v2_json):
