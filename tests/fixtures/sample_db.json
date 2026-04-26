@@ -1,0 +1,48 @@
+{
+  "node-A": [
+    {
+      "Admin Groups": ["plane1"],
+      "IGP Metric": 10000,
+      "Local IP": "10.0.0.1",
+      "Neighbor": "node-B",
+      "Remote IP": "10.0.0.2",
+      "Reservable Bandwidth": 400000000000,
+      "Static Bandwidth": 400000000000,
+      "TE Metric": 100000
+    }
+  ],
+  "node-B": [
+    {
+      "Admin Groups": ["plane1"],
+      "IGP Metric": 10000,
+      "Local IP": "10.0.0.2",
+      "Neighbor": "node-A",
+      "Remote IP": "10.0.0.1",
+      "Reservable Bandwidth": 400000000000,
+      "Static Bandwidth": 400000000000,
+      "TE Metric": 100000
+    },
+    {
+      "Admin Groups": ["plane2"],
+      "IGP Metric": 5000,
+      "Local IP": "10.0.0.5",
+      "Neighbor": "node-C",
+      "Remote IP": "10.0.0.6",
+      "Reservable Bandwidth": 100000000000,
+      "Static Bandwidth": 100000000000,
+      "TE Metric": 50000
+    }
+  ],
+  "node-C": [
+    {
+      "Admin Groups": ["plane2"],
+      "IGP Metric": 5000,
+      "Local IP": "10.0.0.6",
+      "Neighbor": "node-B",
+      "Remote IP": "10.0.0.5",
+      "Reservable Bandwidth": 100000000000,
+      "Static Bandwidth": 100000000000,
+      "TE Metric": 50000
+    }
+  ]
+}

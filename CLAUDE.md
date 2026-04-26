@@ -73,3 +73,15 @@ Optional BW constraint: `min_reservable_bw` (bps int) prunes edges before SPF �
 ### Device verification (`get_ted.py`)
 
 `verify_changed_nodes()` fetches IS-IS config + interface IPs + RSVP bandwidth via NETCONF and compares against two DB snapshots to classify changes as transient vs. confirmed. All three config fetches (`_fetch_isis_config_metrics`, `_fetch_interface_ips`, `_fetch_rsvp_bandwidth`) use lxml XML parsing for consistency.
+
+## Tests
+
+Run from the repo root:
+
+```bash
+pytest -q
+```
+
+Tests cover XML→DB parsing, DB diff/merge, graph algorithms, and security regressions (SEC-001 unused-serialisation removal, SEC-002 XXE hardening). No live NETCONF — `get_ted.py` network code is exercised only at the parser-output level via fixture XML in `tests/fixtures/`.
+
+Fixtures: `tests/fixtures/sample_ted.xml` (3-node hand-crafted Junos TED) + `tests/fixtures/sample_db.json` and `sample_db_v2.json` (corresponding adjacency-DB JSONs for diff/merge tests).
