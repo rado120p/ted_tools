@@ -1,7 +1,7 @@
 """
 db_handler.py — web-ready utility helpers for:
 - XML parsing (file-based and RPC-based)
-- Pickle database load/save
+- JSON database load/save
 - CSV loading
 - Centralized file error handling
 """
@@ -10,13 +10,24 @@ from __future__ import annotations
 
 import csv
 import json
-import pickle
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar, Union
 
 import jxmlease
 from lxml import etree
+
+
+# Hardened XML parser. Prevents:
+# - XXE: external entity expansion (e.g. <!ENTITY xxe SYSTEM "file:///etc/passwd">)
+# - Billion-laughs: recursive entity expansion DoS
+# - SSRF via DTD external references with no_network=True
+# - Memory exhaustion on deeply nested trees with huge_tree=False
+_SAFE_XML_PARSER = etree.XMLParser(
+    resolve_entities=False,
+    no_network=True,
+    huge_tree=False,
+)
 
 
 T = TypeVar("T")
@@ -56,8 +67,6 @@ def file_error_handler(*, exit_on_error: bool = False) -> Callable[[Callable[...
                 raise FileOperationError(f"Permission denied: {getattr(e, 'filename', '') or e}") from e
             except IsADirectoryError as e:
                 raise FileOperationError(f"Expected a file but got a directory: {getattr(e, 'filename', '') or e}") from e
-            except pickle.UnpicklingError as e:
-                raise FileOperationError(f"Failed to load pickle file (may be corrupted): {e}") from e
             except csv.Error as e:
                 raise FileOperationError(f"CSV parsing failed: {e}") from e
             except etree.XMLSyntaxError as e:
@@ -79,7 +88,7 @@ def parse_xml(xml_file: Union[str, Path]) -> dict:
     Parse an XML file into a Python dictionary-like structure via jxmlease.
     """
     xml_path = Path(xml_file)
-    root = etree.parse(str(xml_path)).getroot()
+    root = etree.parse(str(xml_path), parser=_SAFE_XML_PARSER).getroot()
     return jxmlease.parse(etree.tostring(root, pretty_print=True))
 
 @file_error_handler()
@@ -89,33 +98,6 @@ def parse_xml_rpc(rpc_response) -> dict:
     """
     return jxmlease.parse(etree.tostring(rpc_response, pretty_print=True))
 
-
-# -----------------------------
-# Pickle DB
-# -----------------------------
-
-@file_error_handler()
-def load_pickle_db(db_file: Union[str, Path]) -> dict:
-    """
-    Load and deserialize a pickle database file.
-    """
-    db_path = Path(db_file)
-    with open(db_path, "rb") as f:
-        obj = pickle.load(f)
-    if not isinstance(obj, dict):
-        raise FileOperationError("Pickle contents are not a dict.")
-    return obj
-
-
-@file_error_handler()
-def save_pickle_db(db_output: Union[str, Path], node_db: dict) -> None:
-    """
-    Serialize and save a dictionary database to a pickle file.
-    """
-    out_path = Path(db_output)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "wb") as f:
-        pickle.dump(node_db, f)
 
 # -----------------------------
 # JSON DB

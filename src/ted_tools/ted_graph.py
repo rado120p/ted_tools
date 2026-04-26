@@ -7,7 +7,7 @@ Web-integration goals:
 - Functions return values / raise exceptions
 - Uses configurable workspace paths via ted_tools.config (EXPORT_DIR)
 - Can load adjacency DB from:
-    - a .pickle file (created by ted_handler)
+    - a .json file (created by ted_handler)
     - an in-memory adjacency dict (node -> list of neighbor records)
 
 Adjacency DB schema:
@@ -40,7 +40,7 @@ import networkx as nx
 from pyvis.network import Network
 
 from ted_tools.config import EXPORT_DIR, LAYOUT_DIR
-from ted_tools.db_handler import load_json_db, load_pickle_db
+from ted_tools.db_handler import load_json_db
 
 NeighborRecord = Dict[str, Any]
 AdjacencyDB = Dict[str, List[NeighborRecord]]
@@ -70,14 +70,8 @@ def load_adjacency_db(path: str) -> AdjacencyDB:
         data = load_json_db(str(db_path))
         return _ensure_adjacency_db_schema(data)
 
-    if suffix == ".pickle":
-        data = load_pickle_db(str(db_path))
-        return _ensure_adjacency_db_schema(data)
+    raise InvalidAdjacencyDbError("Supported graph DB type is .json.")
 
-    raise InvalidAdjacencyDbError("Supported graph DB types are .json and .pickle.")
-
-def load_pickle_adjacency_db(path: str) -> AdjacencyDB:
-    return load_adjacency_db(path)
 
 def _ensure_adjacency_db_schema(db: Any) -> AdjacencyDB:
     if not isinstance(db, dict):
