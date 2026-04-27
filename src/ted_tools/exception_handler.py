@@ -33,6 +33,8 @@ from netmiko.exceptions import (
     ConnectionException,
 )
 
+from .errors import UserActionableError
+
 
 T = TypeVar("T")
 
@@ -48,10 +50,13 @@ class NetworkErrorDetails:
     message: str
 
 
-class NetworkAutomationError(RuntimeError):
+class NetworkAutomationError(RuntimeError, UserActionableError):
     """
     Base exception for network automation errors.
     Includes basic context useful for a web UI.
+
+    Inherits UserActionableError: details.message is curated for end-user
+    display and is safe to surface verbatim by web/UI layers.
     """
     def __init__(self, details: NetworkErrorDetails, *, cause: Optional[BaseException] = None):
         super().__init__(details.message)

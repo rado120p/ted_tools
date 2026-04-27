@@ -53,8 +53,16 @@ AdjacencyDB = Dict[str, List[NeighborRecord]]
 # Exceptions (web-friendly)
 # -----------------------------
 
-class TedHandlerError(Exception):
-    """Base exception for ted_handler."""
+from .errors import UserActionableError
+
+
+class TedHandlerError(UserActionableError):
+    """Base exception for ted_handler.
+
+    Inherits UserActionableError: str(e) is curated for end-user display
+    (e.g. "node X is not in the database.", "DB is not a dict (...)") and
+    is safe to surface verbatim by web/UI layers.
+    """
 
 
 class EmptyTedDataError(TedHandlerError):

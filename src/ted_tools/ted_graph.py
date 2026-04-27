@@ -50,8 +50,16 @@ AdjacencyDB = Dict[str, List[NeighborRecord]]
 # Exceptions (web-friendly)
 # -----------------------------
 
-class TedGraphError(Exception):
-    """Base exception for ted_graph."""
+from .errors import UserActionableError
+
+
+class TedGraphError(UserActionableError):
+    """Base exception for ted_graph.
+
+    Inherits UserActionableError: str(e) is curated for end-user display
+    (e.g. "No path between A and B", "Unknown analysis type: 'foo'") and
+    is safe to surface verbatim by web/UI layers.
+    """
 
 
 class InvalidAdjacencyDbError(TedGraphError):
