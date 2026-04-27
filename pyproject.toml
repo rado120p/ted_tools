@@ -19,7 +19,7 @@ dependencies = [
   "networkx",
   "junos-eznc",
   "pyvis"
-  "netmiko"
+  "netmiko",
 ]
 
 [project.optional-dependencies]
