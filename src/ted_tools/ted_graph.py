@@ -463,38 +463,40 @@ def path_hop_details(
     metric_attr: str = "IGP Metric",
 ) -> List[dict]:
     """
-    Return per-hop detail dicts for a computed path, matching the trace-path format:
-      ingress_node, neighbor, te_metric, igp_metric, neighbor_ip (remote_ip of edge).
-    Picks the lowest-metric parallel edge for each hop, consistent with SPF.
+    Return per-hop detail dicts for a computed path.
+
+    Each hop is one (u, v) pair from the path with an ``edges`` list containing
+    every parallel edge between u and v that ties for the lowest metric — i.e.
+    the edges actually on the SPF path. Higher-metric parallel edges are
+    excluded. The chosen-min edge is the first entry; ties follow.
     """
     hops = []
     for u, v in zip(path[:-1], path[1:]):
         if graph.has_edge(u, v):
-            best = min(
-                graph[u][v].values(),
-                key=lambda d: _to_int(d.get(metric_attr), 1),
-            )
-            hops.append({
-                "ingress_node":  u,
-                "neighbor":      v,
-                "te_metric":     _to_int(best.get("TE Metric"), 0),
-                "igp_metric":    _to_int(best.get("IGP Metric"), 0),
-                "neighbor_ip":   best.get("Remote IP") or "—",
-                "admin_groups":  best.get("Admin Groups") or [],
-                "static_bw":     best.get("Static Bandwidth"),
-                "reservable_bw": best.get("Reservable Bandwidth"),
-            })
+            edges_data = list(graph[u][v].values())
+            min_metric = min(_to_int(d.get(metric_attr), 1) for d in edges_data)
+            tied = [d for d in edges_data if _to_int(d.get(metric_attr), 1) == min_metric]
+            edges = [
+                {
+                    "te_metric":     _to_int(d.get("TE Metric"), 0),
+                    "igp_metric":    _to_int(d.get("IGP Metric"), 0),
+                    "neighbor_ip":   d.get("Remote IP") or "—",
+                    "admin_groups":  d.get("Admin Groups") or [],
+                    "static_bw":     d.get("Static Bandwidth"),
+                    "reservable_bw": d.get("Reservable Bandwidth"),
+                }
+                for d in tied
+            ]
         else:
-            hops.append({
-                "ingress_node":  u,
-                "neighbor":      v,
+            edges = [{
                 "te_metric":     None,
                 "igp_metric":    None,
                 "neighbor_ip":   "—",
                 "admin_groups":  [],
                 "static_bw":     None,
                 "reservable_bw": None,
-            })
+            }]
+        hops.append({"ingress_node": u, "neighbor": v, "edges": edges})
     return hops
 
 
