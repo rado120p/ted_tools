@@ -107,3 +107,47 @@ def test_path_hop_details_single_edge_per_hop_when_no_parallels(sample_db_json):
     assert [len(h["edges"]) for h in hops] == [1, 1]
     assert hops[0]["edges"][0]["igp_metric"] == 10000
     assert hops[1]["edges"][0]["igp_metric"] == 5000
+
+
+def _ecmp_diamond_graph():
+    """A→B→D and A→C→D, both cost 2 (one hop of metric 1 + one hop of metric 1).
+    Two equal-cost paths from A to D."""
+    g = nx.MultiDiGraph()
+    for n in ("A", "B", "C", "D"):
+        g.add_node(n)
+    for u, v in [("A", "B"), ("B", "D"), ("A", "C"), ("C", "D")]:
+        g.add_edge(u, v, **{"IGP Metric": 1, "TE Metric": 1, "Remote IP": f"10.{ord(u)}.{ord(v)}.0",
+                            "Admin Groups": [], "Static Bandwidth": 100, "Reservable Bandwidth": 100})
+    return g
+
+
+def test_path_analysis_primary_detects_ecmp():
+    """Primary SPF returns chosen path + the alternate equal-cost path in ecmp_paths."""
+    g = _ecmp_diamond_graph()
+    res = path_analysis(g, src="A", dst="D", analysis_type="primary")
+    assert res.path[0] == "A" and res.path[-1] == "D"
+    assert len(res.ecmp_paths) == 1  # one alternative besides the chosen
+    alt = res.ecmp_paths[0]
+    assert alt[0] == "A" and alt[-1] == "D"
+    # The alternative is the OTHER equal-cost path
+    all_paths_set = {tuple(res.path), alt}
+    assert all_paths_set == {("A", "B", "D"), ("A", "C", "D")}
+
+
+def test_path_analysis_no_ecmp_when_unique_path():
+    """When only one shortest path exists, ecmp_paths is empty."""
+    g = nx.MultiDiGraph()
+    for n in ("A", "B", "C"):
+        g.add_node(n)
+    g.add_edge("A", "B", **{"IGP Metric": 1})
+    g.add_edge("B", "C", **{"IGP Metric": 1})
+    res = path_analysis(g, src="A", dst="C", analysis_type="primary")
+    assert res.path == ["A", "B", "C"]
+    assert res.ecmp_paths == ()
+
+
+def test_path_analysis_backup_omits_ecmp():
+    """ECMP detection is primary-only; backup analysis types leave it empty."""
+    g = _ecmp_diamond_graph()
+    res = path_analysis(g, src="A", dst="D", analysis_type="link_disjoint")
+    assert res.ecmp_paths == ()

@@ -262,6 +262,9 @@ class PathAnalysisResult:
     path: List[str]
     total: int
     hops: int
+    # Equal-cost siblings of `path` (excluding `path` itself). Populated only
+    # for primary SPF; empty for backup analysis types.
+    ecmp_paths: tuple = ()
 
 
 SOURCE_COLOR = "#7c3aed"   # violet
@@ -363,8 +366,20 @@ def path_analysis(
             raise TedGraphError(str(exc)) from exc
 
     if analysis_type == "primary":
-        path, total = _spf(graph)
-        return PathAnalysisResult(analysis_type=analysis_type, path=path, total=total, hops=len(path) - 1)
+        try:
+            all_paths = list(nx.all_shortest_paths(graph, src, dst, weight=metric_attr))
+        except (nx.NetworkXNoPath, nx.NodeNotFound) as exc:
+            raise TedGraphError(str(exc)) from exc
+        path = all_paths[0]
+        total = sum(
+            min(_to_int(data.get(metric_attr), 1) for data in graph[u][v].values())
+            for u, v in zip(path[:-1], path[1:])
+        )
+        ecmp = tuple(tuple(p) for p in all_paths[1:])
+        return PathAnalysisResult(
+            analysis_type=analysis_type, path=path, total=total,
+            hops=len(path) - 1, ecmp_paths=ecmp,
+        )
 
     # All non-primary types require the primary path first.
     primary_path, _ = _spf(graph)
