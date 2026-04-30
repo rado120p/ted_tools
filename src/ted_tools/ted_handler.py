@@ -424,6 +424,8 @@ def add_or_remove_link_in_db_file(
     staticBandwidthBA: Optional[int] = None,
     reservableBandwidthAB: Optional[int] = None,
     reservableBandwidthBA: Optional[int] = None,
+    simTagsAB: Optional[List[str]] = None,
+    simTagsBA: Optional[List[str]] = None,
     overwrite: bool = False,
     output_json: Optional[str] = None,
     normalize_nodes_upper: bool = False,
@@ -446,6 +448,8 @@ def add_or_remove_link_in_db_file(
         staticBandwidthBA=staticBandwidthBA,
         reservableBandwidthAB=reservableBandwidthAB,
         reservableBandwidthBA=reservableBandwidthBA,
+        simTagsAB=simTagsAB,
+        simTagsBA=simTagsBA,
         overwrite=overwrite,
         normalize_nodes_upper=normalize_nodes_upper,
     )
@@ -473,6 +477,8 @@ def add_or_remove_link_in_memory(
     staticBandwidthBA: Optional[int] = None,
     reservableBandwidthAB: Optional[int] = None,
     reservableBandwidthBA: Optional[int] = None,
+    simTagsAB: Optional[List[str]] = None,
+    simTagsBA: Optional[List[str]] = None,
     overwrite: bool = False,
     normalize_nodes_upper: bool = False,
 ) -> None:
@@ -508,6 +514,7 @@ def add_or_remove_link_in_memory(
         "Admin Groups": sorted(adminGroupsAB) if adminGroupsAB else [],
         "Static Bandwidth": staticBandwidthAB,
         "Reservable Bandwidth": reservableBandwidthAB,
+        "Sim Tags": sorted(set(simTagsAB)) if simTagsAB else [],
     }
     reverse_record: NeighborRecord = {
         "Neighbor": node_a,
@@ -518,6 +525,7 @@ def add_or_remove_link_in_memory(
         "Admin Groups": sorted(adminGroupsBA) if adminGroupsBA else [],
         "Static Bandwidth": staticBandwidthBA,
         "Reservable Bandwidth": reservableBandwidthBA,
+        "Sim Tags": sorted(set(simTagsBA)) if simTagsBA else [],
     }
 
     if normalized_action == "add":

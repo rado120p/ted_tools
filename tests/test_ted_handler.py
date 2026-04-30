@@ -78,3 +78,35 @@ def test_trace_path_by_ips_unknown_hop(sample_db_json):
     hops = trace_path_by_ips_from_db(str(sample_db_json), ["1.2.3.4"])
     assert len(hops) == 1
     assert hops[0].found is False
+
+
+def test_add_link_persists_sim_tags():
+    from ted_tools.ted_handler import add_or_remove_link_in_memory
+    db = {"A": [], "B": []}
+    add_or_remove_link_in_memory(
+        db,
+        action="add",
+        nodeA="A", nodeB="B",
+        localIP="10.0.0.1", remoteIP="10.0.0.2",
+        teMetricAB=1, igpMetricAB=1,
+        teMetricBA=1, igpMetricBA=1,
+        simTagsAB=["plane3-link"],
+        simTagsBA=["plane3-link"],
+    )
+    assert db["A"][0]["Sim Tags"] == ["plane3-link"]
+    assert db["B"][0]["Sim Tags"] == ["plane3-link"]
+
+
+def test_add_link_default_sim_tags_empty():
+    from ted_tools.ted_handler import add_or_remove_link_in_memory
+    db = {"A": [], "B": []}
+    add_or_remove_link_in_memory(
+        db,
+        action="add",
+        nodeA="A", nodeB="B",
+        localIP="10.0.0.1", remoteIP="10.0.0.2",
+        teMetricAB=1, igpMetricAB=1,
+        teMetricBA=1, igpMetricBA=1,
+    )
+    assert db["A"][0]["Sim Tags"] == []
+    assert db["B"][0]["Sim Tags"] == []
