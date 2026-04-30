@@ -168,3 +168,46 @@ def test_build_graph_propagates_sim_tags():
     assert ab_data.get("Sim Tags") == ["plane3-link"]
     ba_data = list(g["B"]["A"].values())[0]
     assert ba_data.get("Sim Tags", []) == []
+
+
+def _two_node_with_sim_link():
+    g = nx.MultiDiGraph()
+    g.add_node("A"); g.add_node("B")
+    # untagged baseline edge
+    g.add_edge("A", "B", **{"IGP Metric": 10, "TE Metric": 10, "Remote IP": "10.0.0.1",
+                            "Admin Groups": [], "Sim Tags": []})
+    g.add_edge("B", "A", **{"IGP Metric": 10, "TE Metric": 10, "Remote IP": "10.0.0.2",
+                            "Admin Groups": [], "Sim Tags": []})
+    # cheap sim-tagged edge — only present when "plane3-link" is active
+    g.add_edge("A", "B", **{"IGP Metric": 1, "TE Metric": 1, "Remote IP": "10.0.0.3",
+                            "Admin Groups": [], "Sim Tags": ["plane3-link"]})
+    g.add_edge("B", "A", **{"IGP Metric": 1, "TE Metric": 1, "Remote IP": "10.0.0.4",
+                            "Admin Groups": [], "Sim Tags": ["plane3-link"]})
+    return g
+
+
+def test_path_analysis_excludes_sim_tagged_link_when_inactive():
+    g = _two_node_with_sim_link()
+    res = path_analysis(g, src="A", dst="B", analysis_type="primary",
+                        active_sim_tags=None)
+    assert res.path == ["A", "B"]
+    assert res.total == 10  # baseline edge is the only active option
+
+
+def test_path_analysis_includes_sim_tagged_link_when_active():
+    g = _two_node_with_sim_link()
+    res = path_analysis(g, src="A", dst="B", analysis_type="primary",
+                        active_sim_tags=["plane3-link"])
+    assert res.path == ["A", "B"]
+    assert res.total == 1  # cheap sim edge wins
+
+
+def test_path_analysis_untagged_link_unaffected_by_sim_tags():
+    g = nx.MultiDiGraph()
+    g.add_node("A"); g.add_node("B")
+    g.add_edge("A", "B", **{"IGP Metric": 5, "Admin Groups": [], "Sim Tags": []})
+    g.add_edge("B", "A", **{"IGP Metric": 5, "Admin Groups": [], "Sim Tags": []})
+    # active_sim_tags has no effect on untagged links
+    res = path_analysis(g, src="A", dst="B", analysis_type="primary",
+                        active_sim_tags=["irrelevant"])
+    assert res.total == 5

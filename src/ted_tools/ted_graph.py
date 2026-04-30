@@ -306,6 +306,7 @@ def path_analysis(
     exclude_groups: Optional[List[str]] = None,
     min_static_bw: Optional[int] = None,
     min_reservable_bw: Optional[int] = None,
+    active_sim_tags: Optional[List[str]] = None,
 ) -> PathAnalysisResult:
     """
     Run one of five path analyses and return the result.
@@ -328,6 +329,9 @@ def path_analysis(
 
     # Apply user-requested node/link exclusions before any SPF runs.
     graph = _apply_exclusions(graph, exclude_nodes, exclude_links)
+
+    # Sim-tag gating: drop tagged edges that aren't activated by this analysis.
+    graph = _apply_sim_tag_filter(graph, active_sim_tags)
 
     # Admin group constraints apply to Primary SPF only.
     if analysis_type == "primary" and (include_groups or exclude_groups):
@@ -536,6 +540,27 @@ def apply_admin_group_colors(
             if group_name and group_name in edge_groups:
                 g[u][v][key]["color"] = color
                 break
+    return g
+
+
+def _apply_sim_tag_filter(graph: nx.Graph, active_sim_tags: Optional[List[str]]) -> nx.Graph:
+    """Return a copy of `graph` with sim-tagged edges removed unless their
+    tags intersect `active_sim_tags`. Untagged edges (Sim Tags missing or
+    empty) are always kept.
+
+    When `active_sim_tags` is None or empty, every sim-tagged edge is dropped.
+    """
+    active = set(active_sim_tags or [])
+    g = graph.copy()
+    to_remove = []
+    for u, v, key, data in g.edges(keys=True, data=True):
+        tags = data.get("Sim Tags") or []
+        if not tags:
+            continue
+        if not (set(tags) & active):
+            to_remove.append((u, v, key))
+    for u, v, key in to_remove:
+        g.remove_edge(u, v, key)
     return g
 
 
