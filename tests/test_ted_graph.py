@@ -151,3 +151,20 @@ def test_path_analysis_backup_omits_ecmp():
     g = _ecmp_diamond_graph()
     res = path_analysis(g, src="A", dst="D", analysis_type="link_disjoint")
     assert res.ecmp_paths == ()
+
+
+def test_build_graph_propagates_sim_tags():
+    g = nx.MultiDiGraph()
+    db = {
+        "A": [{"Neighbor": "B", "IGP Metric": 1, "TE Metric": 1,
+               "Local IP": "10.0.0.1", "Remote IP": "10.0.0.2",
+               "Admin Groups": [], "Sim Tags": ["plane3-link"]}],
+        "B": [{"Neighbor": "A", "IGP Metric": 1, "TE Metric": 1,
+               "Local IP": "10.0.0.2", "Remote IP": "10.0.0.1",
+               "Admin Groups": []}],
+    }
+    g = build_graph_from_adjacency(db)
+    ab_data = list(g["A"]["B"].values())[0]
+    assert ab_data.get("Sim Tags") == ["plane3-link"]
+    ba_data = list(g["B"]["A"].values())[0]
+    assert ba_data.get("Sim Tags", []) == []

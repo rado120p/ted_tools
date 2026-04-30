@@ -165,6 +165,7 @@ def build_graph_from_adjacency(
                 "remote_ifl":            neighbor_record.get("Remote Interface"),
                 "Static Bandwidth":      neighbor_record.get("Static Bandwidth"),
                 "Reservable Bandwidth":  neighbor_record.get("Reservable Bandwidth"),
+                "Sim Tags":              neighbor_record.get("Sim Tags") or [],
             }
 
             graph.add_node(neighbor_name, label=neighbor_name)
