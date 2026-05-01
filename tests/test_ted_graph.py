@@ -178,7 +178,7 @@ def _two_node_with_sim_link():
                             "Admin Groups": [], "Sim Tags": []})
     g.add_edge("B", "A", **{"IGP Metric": 10, "TE Metric": 10, "Remote IP": "10.0.0.2",
                             "Admin Groups": [], "Sim Tags": []})
-    # cheap sim-tagged edge — only present when "plane3-link" is active
+    # cheap sim-tagged edge — present by default, dropped when "plane3-link" is excluded
     g.add_edge("A", "B", **{"IGP Metric": 1, "TE Metric": 1, "Remote IP": "10.0.0.3",
                             "Admin Groups": [], "Sim Tags": ["plane3-link"]})
     g.add_edge("B", "A", **{"IGP Metric": 1, "TE Metric": 1, "Remote IP": "10.0.0.4",

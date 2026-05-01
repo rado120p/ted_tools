@@ -330,7 +330,7 @@ def path_analysis(
     # Apply user-requested node/link exclusions before any SPF runs.
     graph = _apply_exclusions(graph, exclude_nodes, exclude_links)
 
-    # Sim-tag gating: drop tagged edges that aren't activated by this analysis.
+    # Sim-tag gating: drop tagged edges whose tags are in the exclude set.
     graph = _apply_sim_tag_filter(graph, exclude_sim_tags)
 
     # Admin group constraints apply to Primary SPF only.
