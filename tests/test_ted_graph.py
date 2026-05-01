@@ -186,20 +186,20 @@ def _two_node_with_sim_link():
     return g
 
 
-def test_path_analysis_excludes_sim_tagged_link_when_inactive():
+def test_path_analysis_keeps_sim_tagged_link_by_default():
     g = _two_node_with_sim_link()
     res = path_analysis(g, src="A", dst="B", analysis_type="primary",
-                        active_sim_tags=None)
+                        exclude_sim_tags=None)
     assert res.path == ["A", "B"]
-    assert res.total == 10  # baseline edge is the only active option
+    assert res.total == 1  # cheap sim-tagged edge wins (no exclusion)
 
 
-def test_path_analysis_includes_sim_tagged_link_when_active():
+def test_path_analysis_drops_sim_tagged_link_when_excluded():
     g = _two_node_with_sim_link()
     res = path_analysis(g, src="A", dst="B", analysis_type="primary",
-                        active_sim_tags=["plane3-link"])
+                        exclude_sim_tags=["plane3-link"])
     assert res.path == ["A", "B"]
-    assert res.total == 1  # cheap sim edge wins
+    assert res.total == 10  # baseline edge survives, sim edge dropped
 
 
 def test_path_analysis_untagged_link_unaffected_by_sim_tags():
@@ -207,7 +207,7 @@ def test_path_analysis_untagged_link_unaffected_by_sim_tags():
     g.add_node("A"); g.add_node("B")
     g.add_edge("A", "B", **{"IGP Metric": 5, "Admin Groups": [], "Sim Tags": []})
     g.add_edge("B", "A", **{"IGP Metric": 5, "Admin Groups": [], "Sim Tags": []})
-    # active_sim_tags has no effect on untagged links
+    # exclude_sim_tags has no effect on untagged links
     res = path_analysis(g, src="A", dst="B", analysis_type="primary",
-                        active_sim_tags=["irrelevant"])
+                        exclude_sim_tags=["irrelevant"])
     assert res.total == 5
