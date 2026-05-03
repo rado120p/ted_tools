@@ -500,6 +500,7 @@ def path_hop_details(
                 {
                     "te_metric":     _to_int(d.get("TE Metric"), 0),
                     "igp_metric":    _to_int(d.get("IGP Metric"), 0),
+                    "local_ip":      d.get("Local IP") or "—",
                     "neighbor_ip":   d.get("Remote IP") or "—",
                     "admin_groups":  d.get("Admin Groups") or [],
                     "static_bw":     d.get("Static Bandwidth"),
@@ -511,6 +512,7 @@ def path_hop_details(
             edges = [{
                 "te_metric":     None,
                 "igp_metric":    None,
+                "local_ip":      "—",
                 "neighbor_ip":   "—",
                 "admin_groups":  [],
                 "static_bw":     None,
@@ -615,18 +617,36 @@ def _apply_exclusions(
     exclude_nodes: Optional[List[str]] = None,
     exclude_links: Optional[List[tuple]] = None,
 ) -> nx.Graph:
-    """Return a copy of *graph* with specified nodes and/or links removed."""
+    """Return a copy of *graph* with specified nodes and/or links removed.
+
+    Each entry in exclude_links is either:
+      - (a, b)            → drop ALL parallel edges between a and b
+      - (a, ipA, b, ipB)  → drop only the edge whose Local IP / Remote IP match,
+                            in either direction
+    """
     g = graph.copy()
     for node in (exclude_nodes or []):
         if node in g:
             g.remove_node(node)
-    for a, b in (exclude_links or []):
-        for u, v in ((a, b), (b, a)):
-            if g.has_edge(u, v):
-                # Remove all parallel edges between u→v
-                keys = list(g[u][v].keys())
-                for k in keys:
-                    g.remove_edge(u, v, key=k)
+    for entry in (exclude_links or []):
+        if len(entry) == 2:
+            a, b = entry
+            for u, v in ((a, b), (b, a)):
+                if g.has_edge(u, v):
+                    keys = list(g[u][v].keys())
+                    for k in keys:
+                        g.remove_edge(u, v, key=k)
+        elif len(entry) == 4:
+            a, ip_a, b, ip_b = entry
+            for u, v, want_local, want_remote in (
+                (a, b, ip_a, ip_b),
+                (b, a, ip_b, ip_a),
+            ):
+                if g.has_edge(u, v):
+                    for k, data in list(g[u][v].items()):
+                        if (data.get("Local IP") == want_local
+                                and data.get("Remote IP") == want_remote):
+                            g.remove_edge(u, v, key=k)
     return g
 
 
